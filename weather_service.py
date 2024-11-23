@@ -4,13 +4,13 @@ import requests
 import os
 from dotenv import load_dotenv
 
-
 load_dotenv()
 app = FastAPI()
 
 
 class WeatherWarning(BaseModel):
-    message: str
+    temp_message: str
+    precip_message: str
 
 
 class WeatherResponse(BaseModel):
@@ -23,6 +23,23 @@ if not API_KEY:
     raise Exception("API key not found. Please set it in the .env file.")
 BASE_URL = 'http://api.weatherapi.com/v1/current.json'
 
+
+def evaluate_weather_conditions(temperature: float, precipitation: float) -> WeatherWarning:
+    temp_message = (
+        "WARNING: Temperature NOT within 60-75°F range."
+        if temperature < 60 or temperature > 75
+        else "Temperature is within safe range."
+    )
+
+    precip_message = (
+        "WARNING: There is precipitation."
+        if precipitation > 0
+        else "No precipitation detected."
+    )
+
+    return WeatherWarning(temp_message=temp_message, precip_message=precip_message)
+
+
 @app.get("/weather/{zipcode}", response_model=WeatherResponse)
 async def get_weather(zipcode: str):
     url = f"{BASE_URL}?key={API_KEY}&q={zipcode}&aqi=no"
@@ -32,22 +49,12 @@ async def get_weather(zipcode: str):
         weather_data = response.json()
         current_temp = weather_data['current']['temp_f']
         precipitation = weather_data['current']['precip_mm']
-        
-        messages = []
-        
-        if current_temp < 60 or current_temp > 75:
-            messages.append(WeatherWarning(message="WARNING: Temperature NOT within 60-75°F range."))
-        else:
-            messages.append(WeatherWarning(message="Temperature is within safe range."))
-        
-        if precipitation > 0:
-            messages.append(WeatherWarning(message="WARNING: There is precipitation."))
-        else:
-            messages.append(WeatherWarning(message="No precipitation detected."))
-        
+
+        warning = evaluate_weather_conditions(current_temp, precipitation)
+
         return WeatherResponse(
             temperature=current_temp,
-            messages=messages
+            messages=[warning]  # Wrap in a list to match the response model
         )
     
     else:
